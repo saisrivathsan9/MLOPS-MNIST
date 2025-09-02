@@ -3,6 +3,7 @@ import torch.nn as nn
 from model import get_resnet18
 import json
 
+
 # Initialize model 
 def model_fn(model_dir):
     model = get_resnet18(num_classes=10)
