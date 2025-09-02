@@ -33,7 +33,7 @@ estimator = PyTorch(
     framework_version="2.2.0",  
     py_version="py310",
     instance_count=1,
-    instance_type="ml.t3.medium",
+    instance_type="ml.m5.large",
     hyperparameters=hyperparameters,
     output_path=f"s3://{bucket}/{prefix}/model", 
 )
