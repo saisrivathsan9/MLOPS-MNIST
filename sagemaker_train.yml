@@ -32,4 +32,4 @@ jobs:
           pip install -r requirements.txt
 
       - name: Launch SageMaker training job
-        run: python src/run_sagemaker_job.py
+        run: python run_sagemaker_job.py
