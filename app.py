@@ -1,46 +1,73 @@
 import streamlit as st
 import boto3
+import json
 import numpy as np
-import matplotlib.pyplot as plt
-from torchvision import datasets, transforms
 
-# Load secrets from Streamlit (set in cloud)
-AWS_REGION = st.secrets["AWS_REGION"]
+# --- Streamlit Secrets ---
+AWS_ACCESS_KEY_ID = st.secrets["AWS_ACCESS_KEY_ID"]
+AWS_SECRET_ACCESS_KEY = st.secrets["AWS_SECRET_ACCESS_KEY"]
+REGION = st.secrets["AWS_REGION"]
 ENDPOINT_NAME = st.secrets["SAGEMAKER_ENDPOINT"]
 
-# SageMaker runtime client
-runtime = boto3.client(
-    "sagemaker-runtime",
-    region_name=AWS_REGION,
-    aws_access_key_id=st.secrets["AWS_ACCESS_KEY_ID"],
-    aws_secret_access_key=st.secrets["AWS_SECRET_ACCESS_KEY"]
+# --- SageMaker clients ---
+sm_client = boto3.client(
+    "sagemaker",
+    aws_access_key_id=AWS_ACCESS_KEY_ID,
+    aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+    region_name=REGION
 )
 
-st.title("MNIST Digit Classifier (SageMaker + Streamlit 🚀)")
+runtime_client = boto3.client(
+    "sagemaker-runtime",
+    aws_access_key_id=AWS_ACCESS_KEY_ID,
+    aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+    region_name=REGION
+)
 
-# Load MNIST test dataset
-transform = transforms.Compose([transforms.ToTensor()])
-test_dataset = datasets.MNIST(root="./data", train=False, transform=transform, download=True)
+# --- Helper Functions ---
+def deploy_endpoint():
+    """Check if endpoint exists. Deploy model if not."""
+    existing = [ep["EndpointName"] for ep in sm_client.list_endpoints()["Endpoints"]]
+    if ENDPOINT_NAME in existing:
+        st.info(f"Endpoint '{ENDPOINT_NAME}' already exists. Using it...")
+        return
+    st.warning(f"Endpoint '{ENDPOINT_NAME}' does not exist! Please create it in SageMaker first.")
 
-# User picks an index
-index = st.slider("Pick a test image index:", 0, len(test_dataset)-1, 0)
+def delete_endpoint():
+    """Delete the endpoint to stop billing."""
+    try:
+        sm_client.delete_endpoint(EndpointName=ENDPOINT_NAME)
+        st.info(f"Endpoint '{ENDPOINT_NAME}' deleted successfully.")
+    except Exception as e:
+        st.warning(f"Failed to delete endpoint: {e}")
 
-# Get image & label
-image, label = test_dataset[index]
-img_np = image.squeeze().numpy()
-
-# Show image
-st.write(f"Ground truth label: {label}")
-st.image(img_np, width=150, caption=f"MNIST index {index}", clamp=True)
-
-# Preprocess for SageMaker
-payload = image.numpy().reshape(1, 1, 28, 28).tolist()  # batch size 1
-
-if st.button("Predict with SageMaker"):
-    response = runtime.invoke_endpoint(
+def predict(number_array):
+    """Send MNIST input to SageMaker endpoint and get prediction."""
+    payload = json.dumps({"input": number_array.tolist()})
+    response = runtime_client.invoke_endpoint(
         EndpointName=ENDPOINT_NAME,
         ContentType="application/json",
-        Body=str(payload)  # SageMaker expects JSON
+        Body=payload
     )
-    result = response["Body"].read().decode("utf-8")
-    st.success(f"Predicted: {result}")
+    result = json.loads(response["Body"].read().decode())
+    return result["prediction"]
+
+# --- Streamlit UI ---
+st.title("MNIST SageMaker Demo")
+
+# Deploy endpoint info
+with st.spinner("Checking SageMaker endpoint..."):
+    deploy_endpoint()
+
+# Slider for number selection
+number = st.slider("Select a number (0-9)", 0, 9, 0)
+
+if st.button("Predict"):
+    # Convert number to MNIST-like input (28x28 placeholder)
+    img = np.zeros((1, 1, 28, 28), dtype=np.float32)
+    img[0, 0, :, :] = number / 9.0  # scale 0-1
+    prediction = predict(img)
+    st.write(f"Predicted number: {prediction}")
+
+# Optional: Delete endpoint to avoid charges
+st.button("Delete Endpoint (Stop Billing)", on_click=delete_endpoint)
