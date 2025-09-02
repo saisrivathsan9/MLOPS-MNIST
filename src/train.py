@@ -13,7 +13,7 @@ import os
 
 
 
-with open("../config.yaml", "r") as f:
+with open("config.yaml", "r") as f:
     config = yaml.safe_load(f)
 
 
